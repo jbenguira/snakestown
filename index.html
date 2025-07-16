@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Battle - Multiplayer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #1a1a2e;
+            font-family: Arial, sans-serif;
+        }
+        
+        #gameCanvas {
+            display: block;
+            background: #16213e;
+            cursor: crosshair;
+        }
+        
+        #leaderboard {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            min-width: 200px;
+            z-index: 1000;
+            font-size: 14px;
+        }
+        
+        .leaderboard-title {
+            text-align: center;
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: #4ecdc4;
+        }
+        
+        .leaderboard-entry {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            padding: 2px 0;
+        }
+        
+        .leaderboard-entry.me {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            padding: 5px;
+            margin: 5px -5px;
+        }
+        
+        #gameInfo {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 1000;
+            font-size: 14px;
+        }
+        
+        #connectionStatus {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+            font-size: 12px;
+        }
+        
+        .status-connected {
+            color: #4ecdc4;
+        }
+        
+        .status-disconnected {
+            color: #ff6b6b;
+        }
+        
+        #instructions {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+            font-size: 12px;
+            max-width: 250px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="instructions">
+        Click and hold to move your snake continuously!<br>
+        Release to stop moving.<br>
+        Use mouse wheel or pinch to zoom in/out.
+    </div>
+    
+    <script src="game.js"></script>
+</body>
+</html>

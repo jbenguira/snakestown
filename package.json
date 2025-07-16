@@ -1,0 +1,16 @@
+{
+  "name": "chain-reaction-game",
+  "version": "1.0.0",
+  "description": "Multiplayer physics-based chain reaction game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2"
+  },
+  "keywords": ["game", "multiplayer", "physics", "websocket"],
+  "author": "",
+  "license": "MIT"
+}
