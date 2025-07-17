@@ -525,6 +525,19 @@ class SnakeServer {
         this.players.forEach(player => {
             if (player.alive) {
                 this.updatePlayer(player, now);
+                
+                // Handle magnet ability (works regardless of movement)
+                if (player.abilities.magnet.active && now < player.abilities.magnet.endTime) {
+                    this.applyMagnetEffect(player);
+                } else if (player.abilities.magnet.active) {
+                    // Magnet expired
+                    player.abilities.magnet.active = false;
+                }
+                
+                // Handle shield ability expiration
+                if (player.abilities.shield.active && now > player.abilities.shield.endTime) {
+                    player.abilities.shield.active = false;
+                }
             }
         });
         
@@ -585,18 +598,6 @@ class SnakeServer {
             }
         }
         
-        // Handle magnet ability
-        if (player.abilities.magnet.active && now < player.abilities.magnet.endTime) {
-            this.applyMagnetEffect(player);
-        } else if (player.abilities.magnet.active) {
-            // Magnet expired
-            player.abilities.magnet.active = false;
-        }
-        
-        // Handle shield ability expiration
-        if (player.abilities.shield.active && now > player.abilities.shield.endTime) {
-            player.abilities.shield.active = false;
-        }
     }
     
     updateBullets() {
