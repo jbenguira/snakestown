@@ -28,11 +28,11 @@ class MultiplayerSnakeGame {
             ],
             targetX: 2500,
             targetY: 2500,
-            speed: 3,
+            speed: 8,
             currentSpeed: 0,
             velocityX: 0,
             velocityY: 0,
-            deceleration: 0.15,
+            deceleration: 0.08,
             moving: false,
             color: '#4ECDC4',
             score: 0,
@@ -159,23 +159,46 @@ class MultiplayerSnakeGame {
                 const updateTime = Date.now();
                 data.players.forEach(player => {
                     const existingPlayer = this.players.get(player.id);
-                    if (existingPlayer) {
-                        // Calculate velocities for smooth interpolation
-                        this.calculateSegmentVelocities(existingPlayer, player, updateTime);
-                        
-                        // Store previous position for interpolation
-                        existingPlayer.previousSegments = existingPlayer.segments ? [...existingPlayer.segments] : [];
-                        existingPlayer.previousUpdateTime = existingPlayer.lastUpdateTime || updateTime;
-                        existingPlayer.interpolationStartTime = updateTime;
-                    } else {
-                        // Initialize velocities for new player
-                        this.initializePlayerVelocities(player);
-                    }
                     
-                    // Update player with new data
-                    player.lastUpdateTime = updateTime;
-                    player.interpolationStartTime = updateTime;
-                    this.players.set(player.id, player);
+                    if (player.id === this.playerId) {
+                        // For local player, just update everything from server but with better interpolation
+                        if (existingPlayer) {
+                            // Calculate velocities for smooth interpolation
+                            this.calculateSegmentVelocities(existingPlayer, player, updateTime);
+                            
+                            // Store previous position for interpolation
+                            existingPlayer.previousSegments = existingPlayer.segments ? [...existingPlayer.segments] : [];
+                            existingPlayer.previousUpdateTime = existingPlayer.lastUpdateTime || updateTime;
+                            existingPlayer.interpolationStartTime = updateTime;
+                        } else {
+                            // Initialize velocities for new player
+                            this.initializePlayerVelocities(player);
+                        }
+                        
+                        // Update player with new data
+                        player.lastUpdateTime = updateTime;
+                        player.interpolationStartTime = updateTime;
+                        this.players.set(player.id, player);
+                    } else {
+                        // For other players, use normal interpolation
+                        if (existingPlayer) {
+                            // Calculate velocities for smooth interpolation
+                            this.calculateSegmentVelocities(existingPlayer, player, updateTime);
+                            
+                            // Store previous position for interpolation
+                            existingPlayer.previousSegments = existingPlayer.segments ? [...existingPlayer.segments] : [];
+                            existingPlayer.previousUpdateTime = existingPlayer.lastUpdateTime || updateTime;
+                            existingPlayer.interpolationStartTime = updateTime;
+                        } else {
+                            // Initialize velocities for new player
+                            this.initializePlayerVelocities(player);
+                        }
+                        
+                        // Update player with new data
+                        player.lastUpdateTime = updateTime;
+                        player.interpolationStartTime = updateTime;
+                        this.players.set(player.id, player);
+                    }
                 });
                 
                 // Update world state
@@ -724,6 +747,11 @@ class MultiplayerSnakeGame {
         this.isPressed = true;
         this.updateTarget(clientX, clientY);
         
+        // Immediately start moving locally for responsiveness
+        this.snake.moving = true;
+        this.snake.targetX = this.currentTargetX;
+        this.snake.targetY = this.currentTargetY;
+        
         // Send target update to server
         this.sendToServer({
             type: 'updateTarget',
@@ -736,6 +764,10 @@ class MultiplayerSnakeGame {
     handlePointerMove(clientX, clientY) {
         if (this.isPressed && this.gameState === 'playing' && this.playerId) {
             this.updateTarget(clientX, clientY);
+            
+            // Immediately update local target for responsiveness
+            this.snake.targetX = this.currentTargetX;
+            this.snake.targetY = this.currentTargetY;
             
             // Send target update to server
             this.sendToServer({
@@ -922,12 +954,13 @@ class MultiplayerSnakeGame {
         const head = this.snake.segments[0];
         
         if (this.isPressed && this.snake.moving) {
-            // User is actively controlling - accelerate towards target
+            // User is actively controlling - move directly toward target at full speed
             const dx = this.snake.targetX - head.x;
             const dy = this.snake.targetY - head.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            if (distance > 5) {
+            if (distance > 2) {
+                // Move directly toward target without velocity smoothing for maximum responsiveness
                 const angle = Math.atan2(dy, dx);
                 this.snake.velocityX = Math.cos(angle) * this.snake.speed;
                 this.snake.velocityY = Math.sin(angle) * this.snake.speed;
@@ -1361,13 +1394,15 @@ class MultiplayerSnakeGame {
         const myPlayer = this.players.get(this.playerId);
         if (!myPlayer || !myPlayer.segments || myPlayer.segments.length === 0) return;
         
-        const head = myPlayer.segments[0];
+        // Use interpolated player position for smooth camera following
+        const interpolatedPlayer = this.getInterpolatedPlayer(myPlayer);
+        const head = interpolatedPlayer.segments[0];
         const targetX = head.x - (this.canvas.width / 2) / this.camera.zoom;
         const targetY = head.y - (this.canvas.height / 2) / this.camera.zoom;
         
         // Smooth camera following
-        this.camera.x += (targetX - this.camera.x) * 0.1;
-        this.camera.y += (targetY - this.camera.y) * 0.1;
+        this.camera.x += (targetX - this.camera.x) * 0.15;
+        this.camera.y += (targetY - this.camera.y) * 0.15;
     }
     
     render() {
@@ -1481,7 +1516,7 @@ class MultiplayerSnakeGame {
         this.players.forEach((player, playerId) => {
             if (!player.alive || !player.segments || player.segments.length === 0) return;
             
-            // Get interpolated positions
+            // Get interpolated positions for all players
             const interpolatedPlayer = this.getInterpolatedPlayer(player);
             this.drawPlayer(interpolatedPlayer, playerId === this.playerId);
         });
@@ -1514,7 +1549,7 @@ class MultiplayerSnakeGame {
     
     getInterpolatedPlayer(player) {
         const currentTime = Date.now();
-        const interpolationTime = 100; // 100ms between updates (10 FPS)
+        const interpolationTime = 33; // 33ms between updates (30 FPS)
         
         // If we don't have previous data, return current player
         if (!player.previousSegments || !player.previousUpdateTime || !player.segmentVelocities) {
@@ -1523,7 +1558,7 @@ class MultiplayerSnakeGame {
         
         // Calculate interpolation factor (0 to 1)
         const timeSinceUpdate = currentTime - player.interpolationStartTime;
-        let factor = Math.min(timeSinceUpdate / interpolationTime, 1.2); // Allow slight extrapolation
+        let factor = Math.min(timeSinceUpdate / interpolationTime, 1.15); // Allow some extrapolation for responsiveness
         
         // Create interpolated player
         const interpolatedPlayer = { ...player };

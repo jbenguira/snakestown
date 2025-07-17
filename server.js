@@ -526,7 +526,7 @@ class SnakeServer {
     startBroadcastLoop() {
         this.broadcastInterval = setInterval(() => {
             this.broadcastUpdates();
-        }, 1000 / 10); // 10 FPS for network updates
+        }, 1000 / 30); // 30 FPS for network updates
     }
     
     updateGame() {
