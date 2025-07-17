@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const cluster = require('cluster');
 
 class SnakeServer {
     constructor() {
@@ -26,6 +27,12 @@ class SnakeServer {
         this.maxBonusBoxes = 8;
         this.interactionCooldowns = new Map();
         
+        // Rate limiting
+        this.connectionRateLimit = new Map(); // IP -> {count, lastReset}
+        this.messageRateLimit = new Map(); // playerId -> {count, lastReset}
+        this.maxConnectionsPerIP = 5;
+        this.maxMessagesPerSecond = 60;
+        
         this.setupWebSocket();
         this.initializeWorld();
         this.startGameLoop();
@@ -34,10 +41,35 @@ class SnakeServer {
     }
     
     handleHttpRequest(req, res) {
-        let filePath = req.url === '/' ? '/index.html' : req.url;
-        const fullPath = path.join(__dirname, filePath);
+        // Whitelist of allowed files to prevent path traversal
+        const allowedFiles = {
+            '/': 'index.html',
+            '/index.html': 'index.html',
+            '/game.js': 'game.js',
+            '/style.css': 'style.css'
+        };
         
-        const extname = path.extname(filePath);
+        // Normalize and validate the requested path
+        let requestedPath = req.url.split('?')[0]; // Remove query params
+        const fileName = allowedFiles[requestedPath];
+        
+        if (!fileName) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Not found');
+            return;
+        }
+        
+        // Construct safe file path
+        const safePath = path.join(__dirname, fileName);
+        
+        // Verify the resolved path is still within our directory
+        if (!safePath.startsWith(__dirname)) {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('Forbidden');
+            return;
+        }
+        
+        const extname = path.extname(fileName);
         let contentType = 'text/html';
         
         switch(extname) {
@@ -50,23 +82,127 @@ class SnakeServer {
             case '.html':
                 contentType = 'text/html';
                 break;
+            default:
+                contentType = 'application/octet-stream';
         }
         
-        fs.readFile(fullPath, (err, data) => {
+        fs.readFile(safePath, (err, data) => {
             if (err) {
-                res.writeHead(404);
+                console.error('File read error:', err);
+                res.writeHead(404, { 'Content-Type': 'text/plain' });
                 res.end('Not found');
                 return;
             }
             
-            res.writeHead(200, { 'Content-Type': contentType });
+            // Add security headers
+            res.writeHead(200, { 
+                'Content-Type': contentType,
+                'X-Content-Type-Options': 'nosniff',
+                'X-Frame-Options': 'DENY',
+                'X-XSS-Protection': '1; mode=block'
+            });
             res.end(data);
         });
     }
     
+    // Security validation functions
+    validateCoordinates(x, y) {
+        return typeof x === 'number' && typeof y === 'number' && 
+               !isNaN(x) && !isNaN(y) && 
+               isFinite(x) && isFinite(y) &&
+               x >= -this.worldSize && x <= this.worldSize * 2 && 
+               y >= -this.worldSize && y <= this.worldSize * 2;
+    }
+    
+    validateAbilityName(ability) {
+        const validAbilities = ['dash', 'bullets', 'magnet', 'shield'];
+        return typeof ability === 'string' && validAbilities.includes(ability);
+    }
+    
+    validateMessageData(data) {
+        if (!data || typeof data !== 'object') return false;
+        if (!data.type || typeof data.type !== 'string') return false;
+        
+        switch (data.type) {
+            case 'updateTarget':
+                return this.validateCoordinates(data.targetX, data.targetY) && 
+                       typeof data.moving === 'boolean';
+            case 'useAbility':
+                return this.validateAbilityName(data.ability);
+            case 'respawn':
+                return true; // No additional validation needed
+            default:
+                return false; // Unknown message type
+        }
+    }
+    
+    checkRateLimit(playerId) {
+        const now = Date.now();
+        const playerLimit = this.messageRateLimit.get(playerId);
+        
+        if (!playerLimit || now - playerLimit.lastReset > 1000) {
+            // Reset counter every second
+            this.messageRateLimit.set(playerId, { count: 1, lastReset: now });
+            return true;
+        }
+        
+        if (playerLimit.count >= this.maxMessagesPerSecond) {
+            return false; // Rate limit exceeded
+        }
+        
+        playerLimit.count++;
+        return true;
+    }
+    
+    checkConnectionRateLimit(ip) {
+        // Allow unlimited connections from localhost during development
+        const localhostIPs = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'];
+        if (localhostIPs.includes(ip)) {
+            return true;
+        }
+        
+        const now = Date.now();
+        const ipLimit = this.connectionRateLimit.get(ip);
+        
+        if (!ipLimit || now - ipLimit.lastReset > 60000) {
+            // Reset counter every minute
+            this.connectionRateLimit.set(ip, { count: 1, lastReset: now });
+            return true;
+        }
+        
+        return ipLimit.count < this.maxConnectionsPerIP;
+    }
+    
     setupWebSocket() {
-        this.wss.on('connection', (ws) => {
+        this.wss.on('connection', (ws, req) => {
+            // Get client IP for rate limiting
+            const clientIP = req.headers['x-forwarded-for'] || 
+                           req.connection.remoteAddress || 
+                           req.socket.remoteAddress ||
+                           (req.connection.socket ? req.connection.socket.remoteAddress : null);
+            
+            // Check connection rate limit
+            if (!this.checkConnectionRateLimit(clientIP)) {
+                console.log(`Connection rate limit exceeded for IP: ${clientIP}`);
+                ws.close(1008, 'Rate limit exceeded');
+                return;
+            }
+            
+            // Only increment count for non-localhost IPs
+            const localhostIPs = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'];
+            if (!localhostIPs.includes(clientIP)) {
+                const ipLimit = this.connectionRateLimit.get(clientIP);
+                if (ipLimit) {
+                    ipLimit.count++;
+                }
+            }
+            
             const playerId = this.generatePlayerId();
+            
+            // Update worker stats
+            if (cluster.isWorker && this.workerStats) {
+                this.workerStats.connections++;
+            }
             const player = {
                 id: playerId,
                 ws: ws,
@@ -128,10 +264,30 @@ class SnakeServer {
             
             ws.on('message', (message) => {
                 try {
+                    // Check message rate limit
+                    if (!this.checkRateLimit(playerId)) {
+                        console.log(`Message rate limit exceeded for player: ${playerId}`);
+                        return; // Silently drop the message
+                    }
+                    
+                    // Validate message size (max 1KB)
+                    if (message.length > 1024) {
+                        console.log(`Message too large from player: ${playerId}`);
+                        return;
+                    }
+                    
                     const data = JSON.parse(message);
+                    
+                    // Validate message data
+                    if (!this.validateMessageData(data)) {
+                        console.log(`Invalid message data from player: ${playerId}`, data);
+                        return;
+                    }
+                    
                     this.handleMessage(playerId, data);
                 } catch (error) {
-                    console.error('Error parsing message:', error);
+                    console.error(`Error parsing message from player ${playerId}:`, error);
+                    // Could implement strike system here - disconnect after X invalid messages
                 }
             });
             
@@ -139,12 +295,39 @@ class SnakeServer {
                 console.log(`Player ${playerId} disconnected`);
                 this.players.delete(playerId);
                 
+                // Update worker stats
+                if (cluster.isWorker && this.workerStats) {
+                    this.workerStats.connections--;
+                }
+                
+                // Clean up rate limiting data
+                this.messageRateLimit.delete(playerId);
+                
                 this.broadcast({
                     type: 'playerLeft',
                     playerId: playerId
                 });
             });
         });
+    }
+    
+    // Clean up old rate limiting data to prevent memory leaks
+    cleanupRateLimits() {
+        const now = Date.now();
+        
+        // Clean up connection rate limits older than 5 minutes
+        for (const [ip, data] of this.connectionRateLimit.entries()) {
+            if (now - data.lastReset > 300000) {
+                this.connectionRateLimit.delete(ip);
+            }
+        }
+        
+        // Clean up message rate limits older than 5 seconds
+        for (const [playerId, data] of this.messageRateLimit.entries()) {
+            if (now - data.lastReset > 5000) {
+                this.messageRateLimit.delete(playerId);
+            }
+        }
     }
     
     handleMessage(playerId, data) {
@@ -521,6 +704,26 @@ class SnakeServer {
         this.gameUpdateInterval = setInterval(() => {
             this.updateGame();
         }, 1000 / 60); // 60 FPS for smoother server simulation
+        
+        // Clean up rate limiting data every 30 seconds
+        this.cleanupInterval = setInterval(() => {
+            this.cleanupRateLimits();
+        }, 30000);
+        
+        // Add worker performance monitoring
+        if (cluster.isWorker) {
+            this.workerStats = {
+                connections: 0,
+                messagesPerSecond: 0,
+                lastMessageCount: 0,
+                startTime: Date.now()
+            };
+            
+            // Report stats every 30 seconds
+            setInterval(() => {
+                this.reportWorkerStats();
+            }, 30000);
+        }
     }
     
     startBroadcastLoop() {
@@ -1202,6 +1405,21 @@ class SnakeServer {
         }
     }
     
+    reportWorkerStats() {
+        if (cluster.isWorker) {
+            const stats = {
+                workerId: cluster.worker.id,
+                pid: process.pid,
+                connections: this.workerStats.connections,
+                players: this.players.size,
+                messagesPerSecond: this.workerStats.messagesPerSecond,
+                uptime: Math.floor((Date.now() - this.workerStats.startTime) / 1000),
+                memoryUsage: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+            };
+            console.log(`📊 Worker ${stats.workerId} (PID: ${stats.pid}): ${stats.players} players, ${stats.connections} connections, ${stats.memoryUsage}MB RAM`);
+        }
+    }
+    
     broadcast(message, excludePlayerId = null) {
         this.players.forEach((player, playerId) => {
             if (playerId !== excludePlayerId && player.ws.readyState === WebSocket.OPEN) {
@@ -1213,8 +1431,22 @@ class SnakeServer {
     startServer() {
         const port = process.env.PORT || 3000;
         this.server.listen(port, () => {
-            console.log(`Snake server running on port ${port}`);
+            if (cluster.isWorker) {
+                console.log(`🐍 Worker ${cluster.worker.id} (PID: ${process.pid}) listening on port ${port}`);
+            } else {
+                console.log(`🐍 Snake server running on port ${port}`);
+            }
         });
+        
+        // Graceful shutdown for workers
+        if (cluster.isWorker) {
+            process.on('SIGTERM', () => {
+                console.log(`🛑 Worker ${cluster.worker.id} shutting down gracefully...`);
+                this.server.close(() => {
+                    process.exit(0);
+                });
+            });
+        }
     }
 }
 

@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "cluster": "node cluster.js",
+    "dev": "node server.js",
+    "production": "node cluster.js"
   },
   "dependencies": {
     "ws": "^8.14.2"

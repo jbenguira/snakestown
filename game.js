@@ -96,6 +96,10 @@ class MultiplayerSnakeGame {
         this.gameStartTime = Date.now();
         this.gameInstance = null;
         
+        // Client-side rate limiting
+        this.lastMessageTime = 0;
+        this.messageInterval = 100; // 100ms = 10 messages per second max
+        
         this.resizeCanvas();
         this.setupEventListeners();
         this.connectToServer();
@@ -259,6 +263,16 @@ class MultiplayerSnakeGame {
     
     sendToServer(message) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            // Client-side rate limiting - max 10 messages per second
+            const now = Date.now();
+            if (now - this.lastMessageTime < this.messageInterval) {
+                // Skip sending if too frequent, except for critical messages
+                if (message.type !== 'respawn' && message.type !== 'useAbility') {
+                    return;
+                }
+            }
+            
+            this.lastMessageTime = now;
             this.ws.send(JSON.stringify(message));
         }
     }
@@ -2366,19 +2380,20 @@ class MultiplayerSnakeGame {
         const notification = document.createElement('div');
         notification.style.cssText = `
             position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            top: 20px;
+            right: 20px;
+            transform: translateX(0);
             background: rgba(255, 0, 0, 0.9);
             color: white;
-            padding: 20px;
+            padding: 15px 20px;
             border-radius: 10px;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: bold;
             text-align: center;
             z-index: 3000;
             box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
-            animation: fadeInOut 3s ease-in-out;
+            animation: slideInOut 3s ease-in-out;
+            max-width: 300px;
         `;
         
         notification.innerHTML = `
@@ -2389,11 +2404,11 @@ class MultiplayerSnakeGame {
         // Add CSS animation
         const style = document.createElement('style');
         style.textContent = `
-            @keyframes fadeInOut {
-                0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-                20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-                80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-                100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+            @keyframes slideInOut {
+                0% { opacity: 0; transform: translateX(100%); }
+                15% { opacity: 1; transform: translateX(0); }
+                85% { opacity: 1; transform: translateX(0); }
+                100% { opacity: 0; transform: translateX(100%); }
             }
         `;
         document.head.appendChild(style);
