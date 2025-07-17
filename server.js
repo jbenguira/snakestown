@@ -81,7 +81,7 @@ class SnakeServer {
                 moving: false,
                 growthQueue: 0,
                 abilities: {
-                    dash: { cooldown: 8000, lastUsed: 0, active: false, duration: 0 },
+                    dash: { cooldown: 1000, lastUsed: 0, active: false, duration: 0 },
                     bullets: { cooldown: 8000, lastUsed: 0, active: false, duration: 0 },
                     magnet: { cooldown: 8000, lastUsed: 0, active: false, endTime: 0, duration: 20000 },
                     shield: { cooldown: 8000, lastUsed: 0, active: false, endTime: 0, duration: 30000 }
@@ -247,10 +247,10 @@ class SnakeServer {
                 type: 'movingWall',
                 x: Math.random() * this.worldSize,
                 y: Math.random() * this.worldSize,
-                width: 20,
-                height: 100,
-                vx: (Math.random() - 0.5) * 2,
-                vy: (Math.random() - 0.5) * 2,
+                width: 60,
+                height: 600,
+                vx: (Math.random() - 0.5) * 8,
+                vy: (Math.random() - 0.5) * 8,
                 color: '#8B4513'
             });
         }
@@ -404,7 +404,7 @@ class SnakeServer {
         if (!player.moving) return;
         
         const head = player.segments[0];
-        const dashDistance = 100;
+        const dashDistance = 200;
         const angle = Math.atan2(player.targetY - head.y, player.targetX - head.x);
         
         // Move snake head instantly
@@ -457,7 +457,7 @@ class SnakeServer {
     
     applyMagnetEffect(player) {
         const head = player.segments[0];
-        const magnetRange = 200; // 5x enhanced range as requested
+        const magnetRange = 500; // Much larger magnet range
         
         // Attract food
         this.food.forEach(food => {
@@ -466,7 +466,7 @@ class SnakeServer {
             const distance = Math.sqrt(dx * dx + dy * dy);
             
             if (distance < magnetRange && distance > 0) {
-                const force = Math.min(5, magnetRange / distance);
+                const force = Math.min(12, magnetRange / distance);
                 const angle = Math.atan2(dy, dx);
                 food.x += Math.cos(angle) * force;
                 food.y += Math.sin(angle) * force;
@@ -480,7 +480,7 @@ class SnakeServer {
             const distance = Math.sqrt(dx * dx + dy * dy);
             
             if (distance < magnetRange && distance > 0) {
-                const force = Math.min(5, magnetRange / distance);
+                const force = Math.min(12, magnetRange / distance);
                 const angle = Math.atan2(dy, dx);
                 box.x += Math.cos(angle) * force;
                 box.y += Math.sin(angle) * force;
@@ -1000,7 +1000,7 @@ class SnakeServer {
                     player.speed = 8 * hazard.slowFactor;
                     player.activeEffects.push({
                         type: 'speed',
-                        endTime: currentTime + 5000,
+                        endTime: currentTime + 10000,
                         value: hazard.slowFactor
                     });
                     hazard.lastSlowTime = currentTime;

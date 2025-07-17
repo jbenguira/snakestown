@@ -29,6 +29,10 @@ class MultiplayerSnakeGame {
             targetX: 2500,
             targetY: 2500,
             speed: 3,
+            currentSpeed: 0,
+            velocityX: 0,
+            velocityY: 0,
+            deceleration: 0.15,
             moving: false,
             color: '#4ECDC4',
             score: 0,
@@ -54,7 +58,7 @@ class MultiplayerSnakeGame {
         
         // Ability system
         this.abilities = {
-            dash: { cooldown: 8000, lastUsed: 0, active: false, duration: 0 },
+            dash: { cooldown: 1000, lastUsed: 0, active: false, duration: 0 },
             bullets: { cooldown: 8000, lastUsed: 0, active: false, duration: 0 },
             magnet: { cooldown: 8000, lastUsed: 0, active: false, endTime: 0, duration: 20000 }, // Double duration
             shield: { cooldown: 8000, lastUsed: 0, active: false, endTime: 0, duration: 30000 } // Double duration
@@ -915,24 +919,48 @@ class MultiplayerSnakeGame {
     }
     
     updateSnake() {
-        if (!this.snake.moving) return;
-        
         const head = this.snake.segments[0];
-        const dx = this.snake.targetX - head.x;
-        const dy = this.snake.targetY - head.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
         
-        // Stop when close to target (regardless of press state)
-        if (distance < 5) {
-            this.snake.moving = false;
-            return;
+        if (this.isPressed && this.snake.moving) {
+            // User is actively controlling - accelerate towards target
+            const dx = this.snake.targetX - head.x;
+            const dy = this.snake.targetY - head.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance > 5) {
+                const angle = Math.atan2(dy, dx);
+                this.snake.velocityX = Math.cos(angle) * this.snake.speed;
+                this.snake.velocityY = Math.sin(angle) * this.snake.speed;
+                this.snake.currentSpeed = this.snake.speed;
+            } else {
+                this.snake.moving = false;
+            }
+        } else {
+            // User not controlling - apply deceleration
+            this.snake.currentSpeed *= (1 - this.snake.deceleration);
+            
+            // Stop if speed becomes very low
+            if (this.snake.currentSpeed < 0.1) {
+                this.snake.currentSpeed = 0;
+                this.snake.velocityX = 0;
+                this.snake.velocityY = 0;
+                this.snake.moving = false;
+                return;
+            }
+            
+            // Maintain direction but reduce speed
+            const currentAngle = Math.atan2(this.snake.velocityY, this.snake.velocityX);
+            this.snake.velocityX = Math.cos(currentAngle) * this.snake.currentSpeed;
+            this.snake.velocityY = Math.sin(currentAngle) * this.snake.currentSpeed;
         }
         
-        // Move head towards target
-        const angle = Math.atan2(dy, dx);
+        // Don't move if no velocity
+        if (this.snake.currentSpeed === 0) return;
+        
+        // Calculate new head position
         const newHead = {
-            x: head.x + Math.cos(angle) * this.snake.speed,
-            y: head.y + Math.sin(angle) * this.snake.speed
+            x: head.x + this.snake.velocityX,
+            y: head.y + this.snake.velocityY
         };
         
         // Wrap around world boundaries (unless in ghost mode)
