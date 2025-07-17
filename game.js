@@ -1328,22 +1328,6 @@ class MultiplayerSnakeGame {
         });
     }
     
-    showGameOverModal() {
-        const modal = document.getElementById('gameOverModal');
-        const survivalTime = Math.floor((Date.now() - this.gameStartTime) / 1000);
-        
-        // Update stats in modal
-        document.getElementById('finalScore').textContent = this.snake.score;
-        document.getElementById('finalLength').textContent = this.snake.segments.length;
-        document.getElementById('finalFoodEaten').textContent = this.achievements.collector.foodEaten;
-        document.getElementById('survivalTime').textContent = survivalTime + 's';
-        
-        // Show modal with animation
-        modal.style.display = 'flex';
-        setTimeout(() => {
-            modal.style.opacity = '1';
-        }, 10);
-    }
     
     updateCamera() {
         const myPlayer = this.players.get(this.playerId);
@@ -1681,6 +1665,24 @@ class MultiplayerSnakeGame {
         return color;
     }
     
+    drawLabel(x, y, text, color = 'white', size = 12) {
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.font = `${size}px Arial`;
+        const textWidth = this.ctx.measureText(text).width;
+        const padding = 4;
+        
+        // Draw background
+        this.ctx.fillRect(x - textWidth/2 - padding, y - size - padding, textWidth + padding*2, size + padding*2);
+        
+        // Draw text
+        this.ctx.fillStyle = color;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(text, x, y - size/2);
+        this.ctx.restore();
+    }
+    
     drawFood() {
         this.food.forEach(food => {
             this.ctx.fillStyle = food.color;
@@ -1695,6 +1697,9 @@ class MultiplayerSnakeGame {
             this.ctx.arc(food.x, food.y, this.foodSize * 0.6, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.shadowBlur = 0;
+            
+            // Draw label
+            this.drawLabel(food.x, food.y - this.foodSize - 15, 'Food', '#4ECDC4');
         });
     }
     
@@ -1724,6 +1729,16 @@ class MultiplayerSnakeGame {
             this.ctx.fillRect(box.x - this.bonusBoxSize, box.y - this.bonusBoxSize, 
                             this.bonusBoxSize * 2, this.bonusBoxSize * 2);
             this.ctx.shadowBlur = 0;
+            
+            // Draw label based on type
+            let label = 'Bonus';
+            if (box.type === 'speed_bonus') label = 'Speed+';
+            else if (box.type === 'growth_bonus') label = 'Growth+';
+            else if (box.type === 'speed_malus') label = 'Speed-';
+            else if (box.type === 'shrink_malus') label = 'Shrink';
+            
+            this.drawLabel(box.x, box.y - this.bonusBoxSize - 15, label, 
+                          box.color === '#FF0000' ? '#FF6B6B' : '#4ECDC4');
         });
     }
     
@@ -1738,6 +1753,12 @@ class MultiplayerSnakeGame {
     }
     
     drawLeaderboard() {
+        // Skip drawing canvas leaderboard on mobile
+        if (this.isMobile()) {
+            this.updateUserScore();
+            return;
+        }
+        
         const padding = 20;
         const width = 250;
         const playersArray = Array.from(this.players.values()).filter(p => p.alive);
@@ -1810,6 +1831,9 @@ class MultiplayerSnakeGame {
                     this.ctx.strokeStyle = '#FF0000';
                     this.ctx.lineWidth = 2;
                     this.ctx.strokeRect(hazard.x, hazard.y, hazard.width, hazard.height);
+                    
+                    // Draw label
+                    this.drawLabel(hazard.x + hazard.width/2, hazard.y - 15, 'Moving Wall', '#FF6B6B');
                     break;
                     
                 case 'poisonZone':
@@ -1823,6 +1847,9 @@ class MultiplayerSnakeGame {
                     this.ctx.strokeStyle = hazard.color;
                     this.ctx.lineWidth = 1;
                     this.ctx.stroke();
+                    
+                    // Draw label
+                    this.drawLabel(hazard.x, hazard.y - hazard.radius - 15, 'Poison Zone', '#9932CC');
                     break;
                     
                 case 'speedTrap':
@@ -1845,6 +1872,9 @@ class MultiplayerSnakeGame {
                         );
                         this.ctx.stroke();
                     }
+                    
+                    // Draw label
+                    this.drawLabel(hazard.x, hazard.y - hazard.radius - 15, 'Speed Trap', '#FF8C00');
                     break;
                     
                 case 'teleporter':
@@ -1868,6 +1898,9 @@ class MultiplayerSnakeGame {
                     this.ctx.fill();
                     
                     this.ctx.restore();
+                    
+                    // Draw label
+                    this.drawLabel(hazard.x, hazard.y - hazard.radius - 15, 'Teleporter', '#00CED1');
                     break;
             }
         });
@@ -1887,6 +1920,9 @@ class MultiplayerSnakeGame {
                     this.ctx.strokeStyle = obj.color;
                     this.ctx.lineWidth = 3;
                     this.ctx.stroke();
+                    
+                    // Draw label
+                    this.drawLabel(obj.x, obj.y - obj.radius - 15, 'Portal', '#FF1493');
                     break;
                     
                 case 'bouncePad':
@@ -1907,6 +1943,9 @@ class MultiplayerSnakeGame {
                         obj.y + Math.sin(obj.direction) * arrowLength
                     );
                     this.ctx.stroke();
+                    
+                    // Draw label
+                    this.drawLabel(obj.x, obj.y - obj.radius - 15, 'Bounce Pad', '#32CD32');
                     break;
                     
                 case 'checkpoint':
@@ -1921,6 +1960,11 @@ class MultiplayerSnakeGame {
                         this.ctx.lineWidth = 2;
                         this.ctx.stroke();
                     }
+                    
+                    // Draw label
+                    this.drawLabel(obj.x, obj.y - obj.radius - 15, 
+                                  obj.activated ? 'Checkpoint ✓' : 'Checkpoint', 
+                                  obj.activated ? '#FFD700' : '#999999');
                     break;
                     
                 case 'treasureChest':
@@ -1941,6 +1985,11 @@ class MultiplayerSnakeGame {
                         );
                         this.ctx.shadowBlur = 0;
                     }
+                    
+                    // Draw label
+                    this.drawLabel(obj.x, obj.y - obj.height/2 - 15, 
+                                  obj.opened ? 'Treasure ✓' : 'Treasure', 
+                                  obj.opened ? '#999999' : '#B8860B');
                     break;
             }
         });
@@ -2320,6 +2369,70 @@ class MultiplayerSnakeGame {
         // Reset game state
         this.gameState = 'playing';
         this.gameStartTime = Date.now();
+    }
+    
+    isMobile() {
+        return window.innerWidth <= 768;
+    }
+    
+    updateUserScore() {
+        const currentPlayer = this.players.get(this.playerId);
+        if (currentPlayer) {
+            const userScoreElement = document.getElementById('userScoreValue');
+            if (userScoreElement) {
+                userScoreElement.textContent = currentPlayer.score;
+            }
+        }
+    }
+    
+    showGameOverModal() {
+        const modal = document.getElementById('gameOverModal');
+        const currentPlayer = this.players.get(this.playerId);
+        
+        if (currentPlayer) {
+            // Update game over stats
+            document.getElementById('finalScore').textContent = currentPlayer.score;
+            document.getElementById('finalLength').textContent = currentPlayer.segments ? currentPlayer.segments.length : 0;
+            
+            // Calculate survival time
+            const survivalTime = Math.floor((Date.now() - this.gameStartTime) / 1000);
+            document.getElementById('survivalTime').textContent = survivalTime + 's';
+            
+            // Update game over leaderboard
+            this.updateGameOverLeaderboard();
+        }
+        
+        modal.style.display = 'flex';
+    }
+    
+    updateGameOverLeaderboard() {
+        const leaderboardContainer = document.getElementById('gameOverLeaderboardEntries');
+        const playersArray = Array.from(this.players.values()).filter(p => p.alive);
+        playersArray.sort((a, b) => b.score - a.score);
+        
+        leaderboardContainer.innerHTML = '';
+        
+        playersArray.slice(0, 10).forEach((player, index) => {
+            const entry = document.createElement('div');
+            entry.style.cssText = `
+                display: flex;
+                justify-content: space-between;
+                margin: 5px 0;
+                padding: 5px;
+                background: ${player.id === this.playerId ? 'rgba(255, 255, 255, 0.1)' : 'transparent'};
+                border-radius: 3px;
+                font-size: 14px;
+            `;
+            
+            const rankColor = index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : '#FFFFFF';
+            
+            entry.innerHTML = `
+                <span style="color: ${rankColor}">${index + 1}. ${player.name}</span>
+                <span style="color: #FFEAA7">${player.score}</span>
+            `;
+            
+            leaderboardContainer.appendChild(entry);
+        });
     }
 }
 

@@ -38,6 +38,32 @@
             font-size: 14px;
         }
         
+        #userScore {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            z-index: 1000;
+            font-size: 16px;
+            font-weight: bold;
+            display: none;
+        }
+        
+        #userScore .score-label {
+            color: #4ecdc4;
+            font-size: 12px;
+            font-weight: normal;
+            margin-bottom: 2px;
+        }
+        
+        #userScore .score-value {
+            color: #FFEAA7;
+            font-size: 18px;
+        }
+        
         .leaderboard-title {
             text-align: center;
             margin-bottom: 10px;
@@ -258,10 +284,50 @@
         .restart-button:active {
             transform: translateY(0);
         }
+        
+        /* Mobile styles */
+        @media (max-width: 768px) {
+            #leaderboard {
+                display: none !important;
+            }
+            
+            #userScore {
+                display: block !important;
+            }
+            
+            #abilityBar {
+                bottom: 10px;
+                gap: 5px;
+            }
+            
+            .ability-slot {
+                width: 50px;
+                height: 50px;
+            }
+            
+            .ability-icon {
+                font-size: 20px;
+            }
+            
+            .ability-key {
+                font-size: 10px;
+            }
+            
+            #instructions {
+                font-size: 11px;
+                padding: 8px;
+                max-width: 200px;
+            }
+        }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
+    
+    <div id="userScore">
+        <div class="score-label">YOUR SCORE</div>
+        <div class="score-value" id="userScoreValue">0</div>
+    </div>
     
     <div id="instructions">
         Click and hold to move your snake continuously!<br>
@@ -317,6 +383,14 @@
                     <span class="stat-value" id="survivalTime">0s</span>
                 </div>
             </div>
+            
+            <div id="gameOverLeaderboard" style="margin: 20px 0; padding: 15px; background: rgba(0,0,0,0.3); border-radius: 10px;">
+                <div style="text-align: center; margin-bottom: 10px; font-weight: bold; color: #4ecdc4;">
+                    🏆 LEADERBOARD
+                </div>
+                <div id="gameOverLeaderboardEntries"></div>
+            </div>
+            
             <button class="restart-button" onclick="restartGame()">
                 🔄 Play Again
             </button>

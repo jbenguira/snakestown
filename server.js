@@ -24,6 +24,7 @@ class SnakeServer {
         this.bullets = [];
         this.maxFood = 20;
         this.maxBonusBoxes = 8;
+        this.interactionCooldowns = new Map();
         
         this.setupWebSocket();
         this.initializeWorld();
@@ -325,6 +326,7 @@ class SnakeServer {
         for (let i = 0; i < 6; i++) {
             this.interactiveObjects.push({
                 type: 'bouncePad',
+                id: `bouncePad_${i}`,
                 x: Math.random() * this.worldSize,
                 y: Math.random() * this.worldSize,
                 radius: 15,
@@ -338,6 +340,7 @@ class SnakeServer {
         for (let i = 0; i < 4; i++) {
             this.interactiveObjects.push({
                 type: 'checkpoint',
+                id: `checkpoint_${i}`,
                 x: Math.random() * this.worldSize,
                 y: Math.random() * this.worldSize,
                 radius: 18,
@@ -350,6 +353,7 @@ class SnakeServer {
         for (let i = 0; i < 2; i++) {
             this.interactiveObjects.push({
                 type: 'treasureChest',
+                id: `treasure_${i}`,
                 x: Math.random() * this.worldSize,
                 y: Math.random() * this.worldSize,
                 width: 30,
@@ -804,6 +808,8 @@ class SnakeServer {
     }
     
     checkPlayerInteractiveObjectCollision(player, head) {
+        const currentTime = Date.now();
+        
         this.interactiveObjects.forEach(obj => {
             let collision = false;
             
@@ -821,7 +827,17 @@ class SnakeServer {
             }
             
             if (collision) {
-                this.handleInteractiveObjectEffect(player, obj);
+                // Add cooldown for player-object interactions
+                const cooldownKey = `${player.id}_${obj.id}`;
+                if (!this.interactionCooldowns) {
+                    this.interactionCooldowns = new Map();
+                }
+                
+                const lastInteraction = this.interactionCooldowns.get(cooldownKey) || 0;
+                if (currentTime - lastInteraction > 1000) { // 1 second cooldown
+                    this.interactionCooldowns.set(cooldownKey, currentTime);
+                    this.handleInteractiveObjectEffect(player, obj);
+                }
             }
         });
     }
@@ -1017,15 +1033,21 @@ class SnakeServer {
             case 'checkpoint':
                 if (!obj.activated) {
                     obj.activated = true;
+                    obj.activatedBy = player.id;
+                    obj.activatedTime = currentTime;
                     player.score += 50;
+                    console.log(`Checkpoint ${obj.id} activated by ${player.name}`);
                 }
                 break;
                 
             case 'treasureChest':
                 if (!obj.opened) {
                     obj.opened = true;
+                    obj.openedBy = player.id;
+                    obj.openedTime = currentTime;
                     player.score += 100;
                     player.growthQueue += 20;
+                    console.log(`Treasure ${obj.id} opened by ${player.name}`);
                 }
                 break;
         }
