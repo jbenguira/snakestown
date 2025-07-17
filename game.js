@@ -1354,6 +1354,9 @@ class MultiplayerSnakeGame {
         // Draw grid
         this.drawGrid();
         
+        // Draw world borders
+        this.drawBorders();
+        
         // Draw food
         this.drawFood();
         
@@ -1418,6 +1421,33 @@ class MultiplayerSnakeGame {
             this.ctx.lineTo(endX, y);
             this.ctx.stroke();
         }
+    }
+    
+    drawBorders() {
+        // Draw thick visible borders at world edges
+        this.ctx.strokeStyle = '#FF6B6B'; // Red border color
+        this.ctx.lineWidth = 10 / this.camera.zoom; // Thick border that scales with zoom
+        this.ctx.lineCap = 'round';
+        
+        // Draw border rectangle around the world
+        this.ctx.beginPath();
+        this.ctx.rect(0, 0, this.worldSize, this.worldSize);
+        this.ctx.stroke();
+        
+        // Add warning zone - slightly inside borders with dashed line
+        this.ctx.strokeStyle = '#FFA500'; // Orange warning color
+        this.ctx.lineWidth = 3 / this.camera.zoom;
+        this.ctx.setLineDash([20 / this.camera.zoom, 10 / this.camera.zoom]);
+        
+        const warningOffset = 50; // 50px inside the border
+        this.ctx.beginPath();
+        this.ctx.rect(warningOffset, warningOffset, 
+                     this.worldSize - warningOffset * 2, 
+                     this.worldSize - warningOffset * 2);
+        this.ctx.stroke();
+        
+        // Reset line dash
+        this.ctx.setLineDash([]);
     }
     
     drawPlayers() {

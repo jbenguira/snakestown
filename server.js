@@ -411,10 +411,16 @@ class SnakeServer {
         const newX = head.x + Math.cos(angle) * dashDistance;
         const newY = head.y + Math.sin(angle) * dashDistance;
         
-        player.segments[0] = {
-            x: Math.max(0, Math.min(this.worldSize, newX)),
-            y: Math.max(0, Math.min(this.worldSize, newY))
-        };
+        // Apply bouncing for dash ability too
+        let dashX = newX;
+        let dashY = newY;
+        
+        if (dashX < 0) dashX = Math.abs(dashX);
+        if (dashX > this.worldSize) dashX = this.worldSize - (dashX - this.worldSize);
+        if (dashY < 0) dashY = Math.abs(dashY);
+        if (dashY > this.worldSize) dashY = this.worldSize - (dashY - this.worldSize);
+        
+        player.segments[0] = { x: dashX, y: dashY };
     }
     
     activateBullets(player) {
@@ -571,11 +577,23 @@ class SnakeServer {
             y: head.y + Math.sin(angle) * player.speed
         };
         
-        // Wrap around world boundaries
-        if (newHead.x < 0) newHead.x = this.worldSize;
-        if (newHead.x > this.worldSize) newHead.x = 0;
-        if (newHead.y < 0) newHead.y = this.worldSize;
-        if (newHead.y > this.worldSize) newHead.y = 0;
+        // Bounce off world boundaries
+        if (newHead.x < 0) {
+            newHead.x = Math.abs(newHead.x); // Bounce back into the world
+            player.targetX = Math.max(50, player.targetX); // Adjust target to prevent immediate re-collision
+        }
+        if (newHead.x > this.worldSize) {
+            newHead.x = this.worldSize - (newHead.x - this.worldSize); // Bounce back
+            player.targetX = Math.min(this.worldSize - 50, player.targetX); // Adjust target
+        }
+        if (newHead.y < 0) {
+            newHead.y = Math.abs(newHead.y); // Bounce back into the world
+            player.targetY = Math.max(50, player.targetY); // Adjust target to prevent immediate re-collision
+        }
+        if (newHead.y > this.worldSize) {
+            newHead.y = this.worldSize - (newHead.y - this.worldSize); // Bounce back
+            player.targetY = Math.min(this.worldSize - 50, player.targetY); // Adjust target
+        }
         
         player.segments.unshift(newHead);
         
@@ -744,8 +762,8 @@ class SnakeServer {
             // Check interactive object collision
             this.checkPlayerInteractiveObjectCollision(player, head);
             
-            // Check self-collision
-            this.checkPlayerSelfCollision(player, head);
+            // Self-collision disabled - snakes can pass through themselves
+            // this.checkPlayerSelfCollision(player, head);
             
             // Check collision with other players
             this.checkPlayerPlayerCollision(player, head, playersArray);
@@ -1022,12 +1040,17 @@ class SnakeServer {
                 
             case 'bouncePad':
                 const bounceDistance = obj.power * 20;
-                player.segments[0].x += Math.cos(obj.direction) * bounceDistance;
-                player.segments[0].y += Math.sin(obj.direction) * bounceDistance;
+                let newX = player.segments[0].x + Math.cos(obj.direction) * bounceDistance;
+                let newY = player.segments[0].y + Math.sin(obj.direction) * bounceDistance;
                 
-                // Keep within world bounds
-                player.segments[0].x = Math.max(0, Math.min(this.worldSize, player.segments[0].x));
-                player.segments[0].y = Math.max(0, Math.min(this.worldSize, player.segments[0].y));
+                // Apply bouncing for bounce pad too
+                if (newX < 0) newX = Math.abs(newX);
+                if (newX > this.worldSize) newX = this.worldSize - (newX - this.worldSize);
+                if (newY < 0) newY = Math.abs(newY);
+                if (newY > this.worldSize) newY = this.worldSize - (newY - this.worldSize);
+                
+                player.segments[0].x = newX;
+                player.segments[0].y = newY;
                 break;
                 
             case 'checkpoint':
