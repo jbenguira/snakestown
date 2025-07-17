@@ -2,6 +2,12 @@
 
 A fast-paced, real-time multiplayer snake game where players compete in an arena filled with food, power-ups, hazards, and interactive elements. Grow your snake, use special abilities, and dominate the leaderboard!
 
+## 🎮 Live Demo
+
+**Play now:** [https://snaketown-u3.vm.elestio.app/](https://snaketown-u3.vm.elestio.app/)
+
+Experience the multiplayer action live! No installation required - just open the link and start playing immediately.
+
 
 ## 🎮 Game Features
 
