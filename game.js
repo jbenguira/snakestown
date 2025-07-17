@@ -140,6 +140,7 @@ class MultiplayerSnakeGame {
                     player.lastUpdateTime = initialTime;
                     player.interpolationStartTime = initialTime;
                     player.previousSegments = [];
+                    this.initializePlayerVelocities(player);
                     this.players.set(player.id, player);
                 });
                 
@@ -155,10 +156,16 @@ class MultiplayerSnakeGame {
                 data.players.forEach(player => {
                     const existingPlayer = this.players.get(player.id);
                     if (existingPlayer) {
+                        // Calculate velocities for smooth interpolation
+                        this.calculateSegmentVelocities(existingPlayer, player, updateTime);
+                        
                         // Store previous position for interpolation
                         existingPlayer.previousSegments = existingPlayer.segments ? [...existingPlayer.segments] : [];
                         existingPlayer.previousUpdateTime = existingPlayer.lastUpdateTime || updateTime;
                         existingPlayer.interpolationStartTime = updateTime;
+                    } else {
+                        // Initialize velocities for new player
+                        this.initializePlayerVelocities(player);
                     }
                     
                     // Update player with new data
@@ -180,6 +187,7 @@ class MultiplayerSnakeGame {
                 data.player.lastUpdateTime = joinTime;
                 data.player.interpolationStartTime = joinTime;
                 data.player.previousSegments = [];
+                this.initializePlayerVelocities(data.player);
                 this.players.set(data.player.id, data.player);
                 break;
                 
@@ -203,6 +211,7 @@ class MultiplayerSnakeGame {
                 data.player.lastUpdateTime = respawnTime;
                 data.player.interpolationStartTime = respawnTime;
                 data.player.previousSegments = [];
+                this.initializePlayerVelocities(data.player);
                 this.players.set(data.playerId, data.player);
                 break;
                 
@@ -1437,34 +1446,96 @@ class MultiplayerSnakeGame {
         });
     }
     
+    calculateSegmentVelocities(oldPlayer, newPlayer, updateTime) {
+        if (!oldPlayer.segments || !newPlayer.segments || !oldPlayer.lastUpdateTime) return;
+        
+        const deltaTime = updateTime - oldPlayer.lastUpdateTime;
+        if (deltaTime <= 0) return;
+        
+        // Calculate velocities for each segment
+        newPlayer.segmentVelocities = newPlayer.segments.map((segment, index) => {
+            const oldSegment = oldPlayer.segments[index];
+            if (!oldSegment) return { vx: 0, vy: 0 };
+            
+            return {
+                vx: (segment.x - oldSegment.x) / deltaTime,
+                vy: (segment.y - oldSegment.y) / deltaTime
+            };
+        });
+    }
+    
+    initializePlayerVelocities(player) {
+        if (!player.segments) return;
+        
+        // Initialize all velocities to zero for new players
+        player.segmentVelocities = player.segments.map(() => ({ vx: 0, vy: 0 }));
+    }
+    
     getInterpolatedPlayer(player) {
         const currentTime = Date.now();
         const interpolationTime = 100; // 100ms between updates (10 FPS)
         
         // If we don't have previous data, return current player
-        if (!player.previousSegments || !player.previousUpdateTime) {
+        if (!player.previousSegments || !player.previousUpdateTime || !player.segmentVelocities) {
             return player;
         }
         
         // Calculate interpolation factor (0 to 1)
         const timeSinceUpdate = currentTime - player.interpolationStartTime;
-        const factor = Math.min(timeSinceUpdate / interpolationTime, 1);
+        let factor = Math.min(timeSinceUpdate / interpolationTime, 1.2); // Allow slight extrapolation
         
         // Create interpolated player
         const interpolatedPlayer = { ...player };
         
-        // Interpolate segments - handle different lengths gracefully
+        // Advanced interpolation with velocity prediction and smoothing
         interpolatedPlayer.segments = player.segments.map((segment, index) => {
             const prevSegment = player.previousSegments[index];
-            if (!prevSegment) return segment; // New segment, no interpolation
+            const velocity = player.segmentVelocities[index];
             
-            return {
-                x: prevSegment.x + (segment.x - prevSegment.x) * factor,
-                y: prevSegment.y + (segment.y - prevSegment.y) * factor
-            };
+            if (!prevSegment || !velocity) return segment;
+            
+            // Use different interpolation based on factor
+            let x, y;
+            
+            if (factor <= 1.0) {
+                // Normal interpolation with smoothing
+                const t = this.smoothStep(factor);
+                x = prevSegment.x + (segment.x - prevSegment.x) * t;
+                y = prevSegment.y + (segment.y - prevSegment.y) * t;
+            } else {
+                // Extrapolation using velocity
+                const extraTime = (factor - 1.0) * interpolationTime;
+                x = segment.x + velocity.vx * extraTime;
+                y = segment.y + velocity.vy * extraTime;
+            }
+            
+            // Add micro-smoothing for very small movements
+            if (index > 0 && interpolatedPlayer.segments[index - 1]) {
+                const prevInterpolated = interpolatedPlayer.segments[index - 1];
+                const distance = Math.sqrt(Math.pow(x - prevInterpolated.x, 2) + Math.pow(y - prevInterpolated.y, 2));
+                
+                // If segments are too close or too far, adjust
+                const idealDistance = 20; // Distance between segments
+                if (distance > 0 && distance !== idealDistance) {
+                    const ratio = idealDistance / distance;
+                    const dx = x - prevInterpolated.x;
+                    const dy = y - prevInterpolated.y;
+                    
+                    x = prevInterpolated.x + dx * ratio;
+                    y = prevInterpolated.y + dy * ratio;
+                }
+            }
+            
+            return { x, y };
         });
         
         return interpolatedPlayer;
+    }
+    
+    // Smooth step function for more natural interpolation
+    smoothStep(t) {
+        // Cubic smoothstep function: 3t² - 2t³
+        return t * t * (3 - 2 * t);
     }
     
     drawPlayer(player, isMe) {

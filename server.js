@@ -875,10 +875,22 @@ class SnakeServer {
                     const bodyDistance = Math.sqrt((head.x - segment.x) ** 2 + (head.y - segment.y) ** 2);
                     
                     if (bodyDistance < 15) {
-                        // Always die when hitting another player's body
-                        this.killPlayer(player);
-                        // Give points to the other player
-                        otherPlayer.score += Math.floor(player.segments.length / 2);
+                        // Compare snake sizes for body collision too
+                        const playerSize = player.segments.length;
+                        const otherPlayerSize = otherPlayer.segments.length;
+                        
+                        if (playerSize > otherPlayerSize) {
+                            // Current player is bigger - eats the other player
+                            this.playerEatsPlayer(player, otherPlayer);
+                        } else if (otherPlayerSize > playerSize) {
+                            // Other player is bigger - current player dies
+                            this.killPlayer(player);
+                            otherPlayer.score += Math.floor(player.segments.length / 2);
+                        } else {
+                            // Same size - current player dies (body hit is disadvantageous)
+                            this.killPlayer(player);
+                            otherPlayer.score += Math.floor(player.segments.length / 2);
+                        }
                         return;
                     }
                 }
