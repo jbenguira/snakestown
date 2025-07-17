@@ -1,4 +1,4 @@
-class SimpleSnakeGame {
+class MultiplayerSnakeGame {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d');
@@ -10,6 +10,12 @@ class SimpleSnakeGame {
         // Touch/pinch state
         this.touches = [];
         this.lastPinchDistance = 0;
+        
+        // Multiplayer
+        this.ws = null;
+        this.playerId = null;
+        this.players = new Map();
+        this.connectionStatus = 'disconnected';
         
         // Snake player
         this.snake = {
@@ -88,11 +94,137 @@ class SimpleSnakeGame {
         
         this.resizeCanvas();
         this.setupEventListeners();
-        this.spawnInitialFood();
-        this.spawnInitialBonusBoxes();
-        this.spawnHazards();
-        this.spawnInteractiveObjects();
+        this.connectToServer();
         this.gameLoop();
+    }
+    
+    connectToServer() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}`;
+        
+        this.ws = new WebSocket(wsUrl);
+        
+        this.ws.onopen = () => {
+            this.connectionStatus = 'connected';
+            console.log('Connected to server');
+        };
+        
+        this.ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            this.handleServerMessage(data);
+        };
+        
+        this.ws.onclose = () => {
+            this.connectionStatus = 'disconnected';
+            console.log('Disconnected from server');
+            
+            // Attempt to reconnect after 2 seconds
+            setTimeout(() => {
+                this.connectToServer();
+            }, 2000);
+        };
+        
+        this.ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+    }
+    
+    handleServerMessage(data) {
+        switch (data.type) {
+            case 'gameState':
+                this.playerId = data.yourId;
+                this.players.clear();
+                const initialTime = Date.now();
+                data.players.forEach(player => {
+                    // Initialize interpolation data for initial game state
+                    player.lastUpdateTime = initialTime;
+                    player.interpolationStartTime = initialTime;
+                    player.previousSegments = [];
+                    this.players.set(player.id, player);
+                });
+                
+                // Set world state
+                this.food = data.world.food;
+                this.bonusBoxes = data.world.bonusBoxes;
+                this.hazards = data.world.hazards;
+                this.interactiveObjects = data.world.interactiveObjects;
+                break;
+                
+            case 'gameUpdate':
+                const updateTime = Date.now();
+                data.players.forEach(player => {
+                    const existingPlayer = this.players.get(player.id);
+                    if (existingPlayer) {
+                        // Store previous position for interpolation
+                        existingPlayer.previousSegments = existingPlayer.segments ? [...existingPlayer.segments] : [];
+                        existingPlayer.previousUpdateTime = existingPlayer.lastUpdateTime || updateTime;
+                        existingPlayer.interpolationStartTime = updateTime;
+                    }
+                    
+                    // Update player with new data
+                    player.lastUpdateTime = updateTime;
+                    player.interpolationStartTime = updateTime;
+                    this.players.set(player.id, player);
+                });
+                
+                // Update world state
+                this.food = data.world.food;
+                this.bonusBoxes = data.world.bonusBoxes;
+                this.hazards = data.world.hazards;
+                this.interactiveObjects = data.world.interactiveObjects;
+                this.bullets = data.world.bullets;
+                break;
+                
+            case 'playerJoined':
+                const joinTime = Date.now();
+                data.player.lastUpdateTime = joinTime;
+                data.player.interpolationStartTime = joinTime;
+                data.player.previousSegments = [];
+                this.players.set(data.player.id, data.player);
+                break;
+                
+            case 'playerLeft':
+                this.players.delete(data.playerId);
+                break;
+                
+            case 'playerDied':
+                const player = this.players.get(data.playerId);
+                if (player) {
+                    player.alive = false;
+                    // Show game over modal if it's the current player
+                    if (data.playerId === this.playerId) {
+                        this.showGameOverModal();
+                    }
+                }
+                break;
+                
+            case 'playerRespawned':
+                const respawnTime = Date.now();
+                data.player.lastUpdateTime = respawnTime;
+                data.player.interpolationStartTime = respawnTime;
+                data.player.previousSegments = [];
+                this.players.set(data.playerId, data.player);
+                break;
+                
+            case 'abilityUsed':
+                // Handle ability visual effects for other players
+                const abilityPlayer = this.players.get(data.playerId);
+                if (abilityPlayer) {
+                    this.createAbilityEffects(abilityPlayer, data.ability);
+                }
+                break;
+                
+            case 'playerEaten':
+                // Show eating notification
+                this.showEatingNotification(data.eaterName, data.victimName, data.growthGained);
+                break;
+        }
+    }
+    
+    sendToServer(message) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(message));
+        }
     }
     
     resizeCanvas() {
@@ -221,31 +353,23 @@ class SimpleSnakeGame {
     }
     
     useAbility(abilityName) {
-        if (this.gameState !== 'playing') return;
+        if (this.gameState !== 'playing' || !this.playerId) return;
         
-        const ability = this.abilities[abilityName];
+        const myPlayer = this.players.get(this.playerId);
+        if (!myPlayer || !myPlayer.alive) return;
+        
+        const ability = myPlayer.abilities[abilityName];
         const currentTime = Date.now();
         
         if (currentTime - ability.lastUsed < ability.cooldown) {
             return; // Still on cooldown
         }
         
-        ability.lastUsed = currentTime;
-        
-        switch(abilityName) {
-            case 'dash':
-                this.activateDash();
-                break;
-            case 'bullets':
-                this.activateBullets();
-                break;
-            case 'magnet':
-                this.activateMagnet();
-                break;
-            case 'shield':
-                this.activateShield();
-                break;
-        }
+        // Send ability usage to server
+        this.sendToServer({
+            type: 'useAbility',
+            ability: abilityName
+        });
     }
     
     activateDash() {
@@ -582,16 +706,31 @@ class SimpleSnakeGame {
     }
     
     handlePointerStart(clientX, clientY) {
-        if (this.gameState !== 'playing') return;
+        if (this.gameState !== 'playing' || !this.playerId) return;
         
         this.isPressed = true;
         this.updateTarget(clientX, clientY);
-        this.snake.moving = true;
+        
+        // Send target update to server
+        this.sendToServer({
+            type: 'updateTarget',
+            targetX: this.currentTargetX,
+            targetY: this.currentTargetY,
+            moving: true
+        });
     }
     
     handlePointerMove(clientX, clientY) {
-        if (this.isPressed && this.gameState === 'playing') {
+        if (this.isPressed && this.gameState === 'playing' && this.playerId) {
             this.updateTarget(clientX, clientY);
+            
+            // Send target update to server
+            this.sendToServer({
+                type: 'updateTarget',
+                targetX: this.currentTargetX,
+                targetY: this.currentTargetY,
+                moving: true
+            });
         }
     }
     
@@ -1198,7 +1337,10 @@ class SimpleSnakeGame {
     }
     
     updateCamera() {
-        const head = this.snake.segments[0];
+        const myPlayer = this.players.get(this.playerId);
+        if (!myPlayer || !myPlayer.segments || myPlayer.segments.length === 0) return;
+        
+        const head = myPlayer.segments[0];
         const targetX = head.x - (this.canvas.width / 2) / this.camera.zoom;
         const targetY = head.y - (this.canvas.height / 2) / this.camera.zoom;
         
@@ -1231,8 +1373,8 @@ class SimpleSnakeGame {
         // Draw interactive objects
         this.drawInteractiveObjects();
         
-        // Draw snake
-        this.drawSnake();
+        // Draw all players
+        this.drawPlayers();
         
         // Draw bullets
         this.drawBullets();
@@ -1285,23 +1427,61 @@ class SimpleSnakeGame {
         }
     }
     
-    drawSnake() {
+    drawPlayers() {
+        this.players.forEach((player, playerId) => {
+            if (!player.alive || !player.segments || player.segments.length === 0) return;
+            
+            // Get interpolated positions
+            const interpolatedPlayer = this.getInterpolatedPlayer(player);
+            this.drawPlayer(interpolatedPlayer, playerId === this.playerId);
+        });
+    }
+    
+    getInterpolatedPlayer(player) {
+        const currentTime = Date.now();
+        const interpolationTime = 100; // 100ms between updates (10 FPS)
+        
+        // If we don't have previous data, return current player
+        if (!player.previousSegments || !player.previousUpdateTime) {
+            return player;
+        }
+        
+        // Calculate interpolation factor (0 to 1)
+        const timeSinceUpdate = currentTime - player.interpolationStartTime;
+        const factor = Math.min(timeSinceUpdate / interpolationTime, 1);
+        
+        // Create interpolated player
+        const interpolatedPlayer = { ...player };
+        
+        // Interpolate segments - handle different lengths gracefully
+        interpolatedPlayer.segments = player.segments.map((segment, index) => {
+            const prevSegment = player.previousSegments[index];
+            if (!prevSegment) return segment; // New segment, no interpolation
+            
+            return {
+                x: prevSegment.x + (segment.x - prevSegment.x) * factor,
+                y: prevSegment.y + (segment.y - prevSegment.y) * factor
+            };
+        });
+        
+        return interpolatedPlayer;
+    }
+    
+    drawPlayer(player, isMe) {
         const segmentSize = 10;
         
         // Draw body segments
-        for (let i = this.snake.segments.length - 1; i >= 0; i--) {
-            const segment = this.snake.segments[i];
+        for (let i = player.segments.length - 1; i >= 0; i--) {
+            const segment = player.segments[i];
             const isHead = i === 0;
             
             // Apply visual effects based on active abilities
-            let segmentColor = this.snake.color;
+            let segmentColor = player.color;
             let effectRadius = segmentSize;
             
             if (isHead) {
-                // Removed phase ability - no longer applicable
-                
                 // Shield ability - golden glow
-                if (this.abilities.shield.active) {
+                if (player.abilities && player.abilities.shield && player.abilities.shield.active) {
                     this.ctx.shadowColor = '#FFD700';
                     this.ctx.shadowBlur = 15;
                 }
@@ -1319,8 +1499,8 @@ class SimpleSnakeGame {
             }
             
             // Body color gets darker towards tail
-            const alpha = isHead ? 1 : Math.max(0.3, 1 - (i / this.snake.segments.length) * 0.7);
-            this.ctx.fillStyle = isHead ? segmentColor : this.adjustColorAlpha(this.snake.color, alpha);
+            const alpha = isHead ? 1 : Math.max(0.3, 1 - (i / player.segments.length) * 0.7);
+            this.ctx.fillStyle = isHead ? segmentColor : this.adjustColorAlpha(player.color, alpha);
             
             this.ctx.beginPath();
             this.ctx.arc(segment.x, segment.y, effectRadius, 0, Math.PI * 2);
@@ -1330,8 +1510,8 @@ class SimpleSnakeGame {
             this.ctx.shadowBlur = 0;
             
             // Draw eyes on head
-            if (isHead && this.snake.segments.length > 1) {
-                const nextSegment = this.snake.segments[1];
+            if (isHead && player.segments.length > 1) {
+                const nextSegment = player.segments[1];
                 const angle = Math.atan2(segment.y - nextSegment.y, segment.x - nextSegment.x);
                 
                 this.ctx.fillStyle = 'white';
@@ -1354,9 +1534,13 @@ class SimpleSnakeGame {
             }
         }
         
-        // Add trail particles for special effects
-        if (this.snake.moving) {
-            this.createTrailParticles();
+        // Draw player name
+        if (player.segments.length > 0) {
+            const head = player.segments[0];
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = '12px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(player.name, head.x, head.y - 20);
         }
     }
     
@@ -1416,6 +1600,7 @@ class SimpleSnakeGame {
     }
     
     adjustColorAlpha(color, alpha) {
+        if (!color) return '#4ECDC4'; // Default color
         if (color.startsWith('#')) {
             const r = parseInt(color.substr(1, 2), 16);
             const g = parseInt(color.substr(3, 2), 16);
@@ -1483,8 +1668,9 @@ class SimpleSnakeGame {
     
     drawLeaderboard() {
         const padding = 20;
-        const width = 200;
-        const height = 120;
+        const width = 250;
+        const playersArray = Array.from(this.players.values()).filter(p => p.alive);
+        const height = Math.max(120, 50 + playersArray.length * 25);
         const x = this.canvas.width - width - padding;
         const y = padding;
         
@@ -1501,20 +1687,45 @@ class SimpleSnakeGame {
         this.ctx.fillStyle = '#4ECDC4';
         this.ctx.font = 'bold 16px Arial';
         this.ctx.textAlign = 'center';
-        this.ctx.fillText('🏆 Score', x + width/2, y + 25);
+        this.ctx.fillText('🏆 Leaderboard', x + width/2, y + 25);
         
-        // Draw player stats
-        this.ctx.fillStyle = 'white';
-        this.ctx.font = '14px Arial';
+        // Sort players by score
+        playersArray.sort((a, b) => b.score - a.score);
+        
+        // Draw player rankings
+        this.ctx.font = '12px Arial';
         this.ctx.textAlign = 'left';
-        this.ctx.fillText(`Score: ${this.snake.score}`, x + 10, y + 50);
-        this.ctx.fillText(`Length: ${this.snake.segments.length}`, x + 10, y + 70);
-        this.ctx.fillText(`Food eaten: ${this.achievements.collector.foodEaten}`, x + 10, y + 90);
         
-        // Draw rank (single player for now)
-        this.ctx.fillStyle = '#FFEAA7';
-        this.ctx.font = 'bold 14px Arial';
-        this.ctx.fillText(`Rank: #1`, x + 10, y + 110);
+        playersArray.forEach((player, index) => {
+            const yPos = y + 45 + index * 25;
+            const isMe = player.id === this.playerId;
+            
+            // Highlight current player
+            if (isMe) {
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                this.ctx.fillRect(x + 5, yPos - 15, width - 10, 20);
+            }
+            
+            // Draw rank
+            this.ctx.fillStyle = index === 0 ? '#FFD700' : '#FFFFFF';
+            this.ctx.fillText(`#${index + 1}`, x + 10, yPos);
+            
+            // Draw player name
+            this.ctx.fillStyle = isMe ? '#4ECDC4' : '#FFFFFF';
+            this.ctx.fillText(player.name, x + 35, yPos);
+            
+            // Draw score
+            this.ctx.fillStyle = '#FFEAA7';
+            this.ctx.textAlign = 'right';
+            this.ctx.fillText(`${player.score}`, x + width - 10, yPos);
+            this.ctx.textAlign = 'left';
+        });
+        
+        // Draw connection status
+        this.ctx.fillStyle = this.connectionStatus === 'connected' ? '#4ECDC4' : '#FF6B6B';
+        this.ctx.font = '10px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(this.connectionStatus, x + width/2, y + height - 10);
     }
     
     drawHazards() {
@@ -1697,10 +1908,13 @@ class SimpleSnakeGame {
     
     updateAbilityUI() {
         const currentTime = Date.now();
+        const myPlayer = this.players.get(this.playerId);
+        
+        if (!myPlayer || !myPlayer.abilities) return;
         
         // Update ability slot visual states
-        Object.keys(this.abilities).forEach(abilityName => {
-            const ability = this.abilities[abilityName];
+        Object.keys(myPlayer.abilities).forEach(abilityName => {
+            const ability = myPlayer.abilities[abilityName];
             const element = document.getElementById(`ability-${abilityName}`);
             const timerElement = document.getElementById(`timer-${abilityName}`);
             
@@ -1944,18 +2158,74 @@ class SimpleSnakeGame {
         }
     }
     
-    gameLoop() {
-        // Only update game elements if playing
-        if (this.gameState === 'playing') {
-            // Skip updates if freeze time is active (except for particles and UI)
-            if (!this.temporaryPowers.freezeTime.active) {
-                this.updateSnake();
-                this.updateHazards();
-                this.updateBullets();
-            }
-            this.checkAchievements();
-        }
+    showEatingNotification(eaterName, victimName, growthGained) {
+        // Create eating notification in the UI
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 0, 0, 0.9);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            z-index: 3000;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+            animation: fadeInOut 3s ease-in-out;
+        `;
         
+        notification.innerHTML = `
+            🐍 ${eaterName} ate ${victimName}!<br>
+            <span style="color: #4ECDC4;">+${growthGained} growth</span>
+        `;
+        
+        // Add CSS animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fadeInOut {
+                0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+                20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        document.body.appendChild(notification);
+        
+        // Remove after animation
+        setTimeout(() => {
+            document.body.removeChild(notification);
+            document.head.removeChild(style);
+        }, 3000);
+    }
+    
+    createAbilityEffects(player, abilityName) {
+        if (!player.segments || player.segments.length === 0) return;
+        
+        const head = player.segments[0];
+        
+        switch (abilityName) {
+            case 'dash':
+                this.createDashParticles(head.x, head.y, head.x, head.y);
+                break;
+            case 'bullets':
+                this.createBulletFireParticles(head.x, head.y);
+                break;
+            case 'magnet':
+                this.createPowerActivationParticles(head.x, head.y, 'magnet');
+                break;
+            case 'shield':
+                this.createPowerActivationParticles(head.x, head.y, 'shield');
+                break;
+        }
+    }
+    
+    gameLoop() {
         // Always update effects and camera for smooth animations
         this.updateEffects();
         this.updateCamera();
@@ -1966,78 +2236,19 @@ class SimpleSnakeGame {
     }
     
     restart() {
+        // Hide game over modal
+        document.getElementById('gameOverModal').style.display = 'none';
+        
+        // Send respawn message to server
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                type: 'respawn'
+            }));
+        }
+        
         // Reset game state
         this.gameState = 'playing';
         this.gameStartTime = Date.now();
-        
-        // Reset snake
-        this.snake = {
-            segments: [
-                { x: 2500, y: 2500 },
-                { x: 2480, y: 2500 },
-                { x: 2460, y: 2500 },
-                { x: 2440, y: 2500 },
-                { x: 2420, y: 2500 }
-            ],
-            targetX: 2500,
-            targetY: 2500,
-            speed: 3,
-            moving: false,
-            color: '#4ECDC4',
-            score: 0,
-            growthQueue: 0
-        };
-        
-        // Reset abilities and powers
-        this.abilities = {
-            dash: { cooldown: 8000, lastUsed: 0, active: false, duration: 0 },
-            bullets: { cooldown: 8000, lastUsed: 0, active: false, duration: 0 },
-            magnet: { cooldown: 8000, lastUsed: 0, active: false, endTime: 0, duration: 20000 }, // Double duration
-            shield: { cooldown: 8000, lastUsed: 0, active: false, endTime: 0, duration: 30000 } // Double duration
-        };
-        
-        this.temporaryPowers = {
-            ghostMode: { active: false, endTime: 0 },
-            doubleScore: { active: false, endTime: 0 },
-            freezeTime: { active: false, endTime: 0 },
-            invincibility: { active: false, endTime: 0 }
-        };
-        
-        // Reset achievements
-        this.achievements = {
-            lengthMilestones: { 50: false, 100: false, 200: false },
-            speedDemon: { distance: 0, achieved: false },
-            collector: { foodEaten: 0, achieved: false },
-            riskTaker: { malusCollected: 0, achieved: false }
-        };
-        
-        // Clear effects and particles
-        this.activeEffects = [];
-        this.particles = [];
-        this.bullets = [];
-        
-        // Reset camera
-        this.camera = { x: 0, y: 0, zoom: 1 };
-        
-        // Reset input state
-        this.isPressed = false;
-        this.currentTargetX = 2500;
-        this.currentTargetY = 2500;
-        
-        // Respawn world elements
-        this.food = [];
-        this.bonusBoxes = [];
-        this.hazards = [];
-        this.interactiveObjects = [];
-        
-        this.spawnInitialFood();
-        this.spawnInitialBonusBoxes();
-        this.spawnHazards();
-        this.spawnInteractiveObjects();
-        
-        // Hide game over modal
-        const modal = document.getElementById('gameOverModal');
-        modal.style.display = 'none';
     }
 }
 
@@ -2053,5 +2264,5 @@ function restartGame() {
 
 // Start the game when the page loads
 window.addEventListener('load', () => {
-    gameInstance = new SimpleSnakeGame();
+    gameInstance = new MultiplayerSnakeGame();
 });
