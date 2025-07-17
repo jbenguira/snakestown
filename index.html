@@ -103,6 +103,161 @@
             font-size: 12px;
             max-width: 250px;
         }
+        
+        #abilityBar {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+        }
+        
+        .ability-slot {
+            width: 60px;
+            height: 60px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #444;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .ability-slot:hover {
+            border-color: #4ECDC4;
+            background: rgba(0, 0, 0, 0.9);
+        }
+        
+        .ability-slot.ready {
+            border-color: #00FF00;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+        }
+        
+        .ability-slot.cooldown {
+            border-color: #FF0000;
+            opacity: 0.5;
+        }
+        
+        .ability-icon {
+            font-size: 24px;
+            margin-bottom: 2px;
+        }
+        
+        .ability-key {
+            font-size: 12px;
+            color: #BBB;
+            font-weight: bold;
+        }
+        
+        .ability-cooldown {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 0, 0, 0.3);
+            border-radius: 6px;
+            display: none;
+        }
+        
+        .ability-slot.cooldown .ability-cooldown {
+            display: block;
+        }
+        
+        .ability-timer {
+            position: absolute;
+            bottom: 2px;
+            right: 4px;
+            font-size: 10px;
+            color: #FF0000;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            display: none;
+        }
+        
+        .ability-slot.cooldown .ability-timer {
+            display: block;
+        }
+        
+        #gameOverModal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        
+        .game-over-content {
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            border: 3px solid #4ECDC4;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            color: white;
+            box-shadow: 0 0 30px rgba(78, 205, 196, 0.5);
+            max-width: 400px;
+            width: 90%;
+        }
+        
+        .game-over-title {
+            font-size: 32px;
+            font-weight: bold;
+            color: #FF6B6B;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
+        }
+        
+        .game-over-stats {
+            margin: 20px 0;
+            font-size: 18px;
+        }
+        
+        .stat-line {
+            margin: 10px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .stat-value {
+            color: #4ECDC4;
+            font-weight: bold;
+        }
+        
+        .restart-button {
+            background: linear-gradient(135deg, #4ECDC4, #45B7D1);
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(78, 205, 196, 0.3);
+        }
+        
+        .restart-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(78, 205, 196, 0.4);
+            background: linear-gradient(135deg, #45B7D1, #4ECDC4);
+        }
+        
+        .restart-button:active {
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body>
@@ -110,8 +265,62 @@
     
     <div id="instructions">
         Click and hold to move your snake continuously!<br>
-        Release to stop moving.<br>
-        Use mouse wheel or pinch to zoom in/out.
+        Release to stop moving. Use mouse wheel or pinch to zoom in/out.<br>
+        <strong>Abilities:</strong> Press 1-4 keys or click/touch ability buttons below
+    </div>
+    
+    <div id="abilityBar">
+        <div class="ability-slot" id="ability-dash">
+            <div class="ability-icon">⚡</div>
+            <div class="ability-key">1</div>
+            <div class="ability-cooldown"></div>
+            <div class="ability-timer" id="timer-dash">0</div>
+        </div>
+        <div class="ability-slot" id="ability-bullets">
+            <div class="ability-icon">🔫</div>
+            <div class="ability-key">2</div>
+            <div class="ability-cooldown"></div>
+            <div class="ability-timer" id="timer-bullets">0</div>
+        </div>
+        <div class="ability-slot" id="ability-magnet">
+            <div class="ability-icon">🧲</div>
+            <div class="ability-key">3</div>
+            <div class="ability-cooldown"></div>
+            <div class="ability-timer" id="timer-magnet">0</div>
+        </div>
+        <div class="ability-slot" id="ability-shield">
+            <div class="ability-icon">🛡️</div>
+            <div class="ability-key">4</div>
+            <div class="ability-cooldown"></div>
+            <div class="ability-timer" id="timer-shield">0</div>
+        </div>
+    </div>
+    
+    <div id="gameOverModal">
+        <div class="game-over-content">
+            <div class="game-over-title">💥 GAME OVER 💥</div>
+            <div class="game-over-stats">
+                <div class="stat-line">
+                    <span>Final Score:</span>
+                    <span class="stat-value" id="finalScore">0</span>
+                </div>
+                <div class="stat-line">
+                    <span>Snake Length:</span>
+                    <span class="stat-value" id="finalLength">0</span>
+                </div>
+                <div class="stat-line">
+                    <span>Food Eaten:</span>
+                    <span class="stat-value" id="finalFoodEaten">0</span>
+                </div>
+                <div class="stat-line">
+                    <span>Survival Time:</span>
+                    <span class="stat-value" id="survivalTime">0s</span>
+                </div>
+            </div>
+            <button class="restart-button" onclick="restartGame()">
+                🔄 Play Again
+            </button>
+        </div>
     </div>
     
     <script src="game.js"></script>
