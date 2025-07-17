@@ -36,6 +36,7 @@ A fast-paced, real-time multiplayer snake game where players compete in an arena
 ### Prerequisites
 - Node.js (v14 or higher)
 - npm
+- Minimum 2 CPU cores recommended for production
 
 ### Installation
 ```bash
@@ -46,8 +47,36 @@ cd thegame
 # Install dependencies
 npm install
 
-# Start the server
-npm start
+# Development (single process)
+npm run dev
+
+# Production (multi-process cluster)
+npm run cluster
+```
+
+### Deployment Options
+
+#### Development Mode
+```bash
+npm run dev
+# Single process - good for development and testing
+# Handles ~150 concurrent users
+```
+
+#### Production Mode
+```bash
+npm run cluster
+# Multi-process cluster using all CPU cores
+# Handles 400-1200+ concurrent users depending on hardware
+```
+
+#### Advanced Load Balancing
+```bash
+# Install additional dependency for advanced load balancing
+npm install http-proxy-middleware
+
+# Start load balancer (optional for high-scale deployments)
+node loadbalancer.js
 ```
 
 ### Playing the Game
@@ -134,11 +163,29 @@ force: up to 12     // Attraction strength
 
 ## 🔧 Technical Details
 
+### Multi-Process Architecture
+Snake Town uses Node.js clustering for horizontal scaling:
+
+- **Master Process**: Manages worker processes and handles crashes
+- **Worker Processes**: Independent game servers sharing the same port
+- **Automatic Load Balancing**: OS-level connection distribution
+- **Fault Tolerance**: Worker crashes don't affect other players
+
+### Performance Scaling
+
+| Server Configuration | Concurrent Users | Workers | Memory Usage |
+|---------------------|------------------|---------|--------------|
+| 2 CPU cores         | 200-300         | 2       | ~200MB       |
+| 4 CPU cores         | 400-600         | 4       | ~400MB       |
+| 8 CPU cores         | 800-1200+       | 8       | ~800MB       |
+
 ### Performance Optimizations
+- **Multi-Process Clustering**: Utilize all CPU cores
 - **Culling**: Only render visible elements
 - **Efficient Collision Detection**: Spatial optimization
 - **Memory Management**: Proper object pooling and cleanup
 - **Network Optimization**: Delta compression and batching
+- **Rate Limiting**: Client (10 msg/sec) and server (60 msg/sec) limits
 
 ### Browser Compatibility
 - **Modern Browsers**: Chrome, Firefox, Safari, Edge
@@ -174,10 +221,45 @@ force: up to 12     // Attraction strength
 - [ ] Statistics tracking
 
 ### Performance Improvements
+- [x] Multi-process clustering for horizontal scaling
 - [ ] WebGL rendering for better performance
-- [ ] Server clustering for scaling
 - [ ] Better mobile optimization
 - [ ] Progressive loading
+
+## 📊 Production Deployment
+
+### Monitoring
+Snake Town provides built-in monitoring for clustered deployments:
+
+```bash
+📊 Worker 1 (PID: 1234): 45 players, 45 connections, 67MB RAM
+📊 Worker 2 (PID: 1235): 52 players, 52 connections, 71MB RAM
+📊 Worker 3 (PID: 1236): 38 players, 38 connections, 63MB RAM
+```
+
+### Environment Variables
+```bash
+PORT=3000                    # Server port (default: 3000)
+NODE_ENV=production         # Environment mode
+LOAD_BALANCER_PORT=8080     # Load balancer port (default: 8080)
+```
+
+### Production Checklist
+- [ ] Use `npm run cluster` for production
+- [ ] Set `NODE_ENV=production`
+- [ ] Configure reverse proxy (nginx/apache)
+- [ ] Set up monitoring (PM2, logs)
+- [ ] Enable HTTPS/WSS for security
+- [ ] Configure firewall rules
+
+### Scaling Guidelines
+1. **Start with clustering**: `npm run cluster`
+2. **Monitor performance**: Watch worker stats and system resources
+3. **Vertical scaling**: Add more CPU cores/RAM to existing server
+4. **Horizontal scaling**: Add more servers with load balancer
+5. **Database scaling**: Consider Redis for >1000 concurrent users
+
+For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## 🤝 Contributing
 

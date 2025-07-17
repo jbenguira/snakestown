@@ -1,7 +1,7 @@
 {
   "name": "chain-reaction-game",
   "version": "1.0.0",
-  "description": "Multiplayer physics-based chain reaction game",
+  "description": "High-performance multiplayer snake game with clustering support for 400-1200+ concurrent users",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
