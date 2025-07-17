@@ -1386,7 +1386,6 @@ class MultiplayerSnakeGame {
         this.ctx.restore();
         
         // Draw UI elements
-        this.drawZoomIndicator();
         this.drawLeaderboard();
         this.updateAbilityUI();
     }
@@ -1772,15 +1771,6 @@ class MultiplayerSnakeGame {
         });
     }
     
-    drawZoomIndicator() {
-        const head = this.snake.segments[0];
-        
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        this.ctx.font = '14px Arial';
-        this.ctx.textAlign = 'left';
-        this.ctx.fillText(`Zoom: ${Math.round(this.camera.zoom * 100)}%`, 10, this.canvas.height - 30);
-        this.ctx.fillText(`Position: ${Math.round(head.x)}, ${Math.round(head.y)}`, 10, this.canvas.height - 10);
-    }
     
     drawLeaderboard() {
         // Skip drawing canvas leaderboard on mobile
